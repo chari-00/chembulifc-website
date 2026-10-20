@@ -14,7 +14,7 @@ describe("sendRegistrationEmail (Gmail SMTP Transport & Rich HTML)", () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv };
-    delete process.env.GMAIL_APP_PASSWORD;
+    delete (process.env as Record<string, string | undefined>)["GMAIL_APP_PASSWORD"];
   });
 
   afterEach(() => {
@@ -49,9 +49,9 @@ describe("sendRegistrationEmail (Gmail SMTP Transport & Rich HTML)", () => {
     const attachments = buildRegistrationEmailAttachments();
 
     expect(attachments).toHaveLength(1);
-    expect(attachments[0].filename).toBe("signature-message.png");
-    expect(attachments[0].cid).toBe("chembuli-logo");
-    expect(fs.existsSync(attachments[0].path)).toBe(true);
+    expect(attachments[0]?.filename).toBe("signature-message.png");
+    expect(attachments[0]?.cid).toBe("chembuli-logo");
+    expect(fs.existsSync(attachments[0]!.path)).toBe(true);
   });
 
   it("resolves a valid, existing signature image file path", () => {

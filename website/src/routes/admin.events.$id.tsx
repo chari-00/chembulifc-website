@@ -129,7 +129,7 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
     }
   }
 
-  function save() {
+  async function save() {
     if (!ev.name.trim()) return toast.error("Event name is required");
     if (!ev.venue.trim()) return toast.error("Venue is required");
     if (!validVenueMap(ev.venueMap ?? "")) return toast.error("Enter a valid HTTPS Google Maps link.");
@@ -144,7 +144,7 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
     }
     const final = { ...ev, slug };
     try {
-      update((d) => ({
+      await update((d) => ({
         ...d,
         events: isNew ? [...d.events, final] : d.events.map((e) => (e.slug === slug ? final : e)),
       }));
@@ -901,7 +901,7 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                             },
                           });
                           if (!res.sent) { toast.error(res.reason ?? "Email not sent"); return; }
-                          update((d) => ({
+                          await update((d) => ({
                             ...d,
                             registrations: d.registrations.map((x) =>
                               x.id === r.id ? { ...x, emailSent: true } : x,
@@ -927,23 +927,28 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                       variant="outline"
                       disabled={!canConfirmRegistration(ev.form, r)}
                       title={confirmationMessageEnabled(ev.form) && !r.emailSent ? "Send the email first" : undefined}
-                      onClick={() => {
+                      onClick={async () => {
                         if (!canConfirmRegistration(ev.form, r)) return;
-                        update((d) => ({
-                          ...d,
-                          registrations: d.registrations.map((x) =>
-                            x.id === r.id
-                              ? { ...x, confirmed: true, confirmedAt: new Date().toISOString() }
-                              : x,
-                          ),
-                        }));
-                        logAdminAction(
-                          "registration.confirm",
-                          "registration",
-                          r.id,
-                          `Confirmed registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
-                          { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
-                        ).catch(() => {});
+                        try {
+                          await update((d) => ({
+                            ...d,
+                            registrations: d.registrations.map((x) =>
+                              x.id === r.id
+                                ? { ...x, confirmed: true, confirmedAt: new Date().toISOString() }
+                                : x,
+                            ),
+                          }));
+                          logAdminAction(
+                            "registration.confirm",
+                            "registration",
+                            r.id,
+                            `Confirmed registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
+                            { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
+                          ).catch(() => {});
+                          toast.success("Registration confirmed");
+                        } catch (e) {
+                          toast.error((e as Error).message);
+                        }
                       }}
                       className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
                     >
@@ -953,19 +958,24 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                   </div>
                   <div className="sm:col-span-2">
                     <button
-                      onClick={() => {
+                      onClick={async () => {
                         if (!confirm("Delete this registration? Its spot and color become free.")) return;
-                        update((d) => ({
-                          ...d,
-                          registrations: d.registrations.filter((x) => x.id !== r.id),
-                        }));
-                        logAdminAction(
-                          "registration.delete",
-                          "registration",
-                          r.id,
-                          `Deleted registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
-                          { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
-                        ).catch(() => {});
+                        try {
+                          await update((d) => ({
+                            ...d,
+                            registrations: d.registrations.filter((x) => x.id !== r.id),
+                          }));
+                          logAdminAction(
+                            "registration.delete",
+                            "registration",
+                            r.id,
+                            `Deleted registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
+                            { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
+                          ).catch(() => {});
+                          toast.success("Registration deleted");
+                        } catch (e) {
+                          toast.error((e as Error).message);
+                        }
                       }}
                       className={`${btn} hover:text-destructive`}
                     >

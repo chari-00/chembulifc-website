@@ -128,7 +128,7 @@ function AdminLayout() {
         </div>
       </header>
       <main className="mx-auto max-w-7xl px-5 py-10">
-        <Outlet context={{ user: currentUser, isSuperAdmin }} />
+        <Outlet />
       </main>
     </div>
   );

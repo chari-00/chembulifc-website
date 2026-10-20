@@ -99,7 +99,7 @@ describe("CSV Export Utility (csv-export.ts)", () => {
 
   it("produces correct header order matching form.fields order", () => {
     const csv = generateRegistrationsCsv(baseMockEvent, sampleRegistrations);
-    const headerLine = csv.split("\r\n")[0];
+    const headerLine = csv.split("\r\n")[0]!;
     const headers = headerLine.split(",");
 
     // Fixed first two
@@ -129,7 +129,7 @@ describe("CSV Export Utility (csv-export.ts)", () => {
     };
 
     const csv = generateRegistrationsCsv(eventWithoutColors, sampleRegistrations);
-    const headerLine = csv.split("\r\n")[0];
+    const headerLine = csv.split("\r\n")[0]!;
     const headers = headerLine.split(",");
 
     expect(headers).not.toContain("Team Color");

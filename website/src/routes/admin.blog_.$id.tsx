@@ -50,12 +50,13 @@ function BlogEditor({ initial, isNew }: { initial: BlogPost; isNew: boolean }) {
     } catch (error) { toast.error((error as Error).message); }
     setBusy(false);
   }
-  function save() {
+  async function save() {
     if (!post.title.trim()) return toast.error("Add a post title.");
     if (post.published && !post.blocks.some((block) => block.content.trim())) return toast.error("Add content before publishing.");
     const saved = { ...post, title: post.title.trim(), updatedAt: new Date().toISOString() };
+    setBusy(true);
     try {
-      update((db) => ({ ...db, posts: isNew ? [...db.posts, saved] : db.posts.map((p) => p.id === post.id ? saved : p) }));
+      await update((db) => ({ ...db, posts: isNew ? [...db.posts, saved] : db.posts.map((p) => p.id === post.id ? saved : p) }));
       
       let action: AdminAction = isNew ? "blog.create" : "blog.update";
       if (!isNew && !initial.published && saved.published) {
@@ -64,7 +65,7 @@ function BlogEditor({ initial, isNew }: { initial: BlogPost; isNew: boolean }) {
         action = "blog.unpublish";
       }
 
-      logAdminAction(
+      await logAdminAction(
         action,
         "post",
         saved.id,
@@ -81,6 +82,7 @@ function BlogEditor({ initial, isNew }: { initial: BlogPost; isNew: boolean }) {
       toast.success(saved.published ? "Post published" : "Draft saved");
       if (isNew) navigate({ to: "/admin/blog/$id", params: { id: saved.id }, replace: true });
     } catch (error) { toast.error((error as Error).message); }
+    finally { setBusy(false); }
     return undefined;
   }
   return <div className="mx-auto max-w-4xl">

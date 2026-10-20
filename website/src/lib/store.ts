@@ -22,6 +22,8 @@ import {
   BUCKETS,
 } from "@/lib/appwrite";
 
+export type { Photo };
+
 export interface DB {
   events: ClubEvent[];
   gallery: Photo[];
@@ -59,7 +61,7 @@ export interface AdminHistoryEntry {
   targetType: AdminTargetType;
   targetId: string;
   summary: string;
-  metadata?: Record<string, any>;
+  metadata?: Record<string, any> | undefined;
   createdAt: string;
 }
 
@@ -69,17 +71,16 @@ export interface ReferenceHistoryEntry {
   eventSlug: string;
   registrationId: string;
   createdAt: string;
-  ipHint?: string;
+  ipHint?: string | undefined;
 }
 
-const CACHE_KEY = "cfc-appwrite-cache-v1";
 const emptyDB = (): DB => ({ events: [], gallery: [], registrations: [], posts: [] });
 const serverSnapshot = emptyDB();
 let cache: DB | null = null;
 const listeners = new Set<() => void>();
 let isInitialized = false;
 
-/** Sane defaults for documents read from Appwrite or local cache. */
+/** Sane defaults for documents read from Appwrite. */
 export function normalize(db: DB): DB {
   return {
     ...db,
@@ -130,21 +131,22 @@ export function getFileUrl(bucketId: string, fileIdOrUrl: string): string {
 }
 
 /** Uploads base64 image to an Appwrite bucket and returns the resulting file ID. */
-async function uploadBase64Image(bucketId: string, dataUrl: string, prefix = "img"): Promise<string> {
+export async function uploadBase64Image(bucketId: string, dataUrl: string, prefix = "img"): Promise<string> {
   const ext = dataUrl.includes("image/png") ? "png" : dataUrl.includes("image/webp") ? "webp" : "jpg";
   const file = base64ToFile(dataUrl, `${prefix}-${Date.now()}.${ext}`);
   const result = await storage.createFile(bucketId, ID.unique(), file);
   return result.$id;
 }
 
-/** Reads documents from Appwrite chembuli_db and updates in-memory cache. */
+/** Reads documents directly from Appwrite chembuli_db and updates in-memory cache. */
 export async function refreshFromAppwrite(): Promise<DB> {
   try {
     const [eventsRes, galleryRes, postsRes, regsRes] = await Promise.all([
       databases.listDocuments(DATABASE_ID, COLLECTIONS.EVENTS, [Query.limit(100)]),
       databases.listDocuments(DATABASE_ID, COLLECTIONS.GALLERY, [Query.orderDesc("$createdAt"), Query.limit(100)]),
       databases.listDocuments(DATABASE_ID, COLLECTIONS.POSTS, [Query.limit(100)]),
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]),
+      // Defensively catch 401 on registrations so unauthenticated public visitors never fail store hydration
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]).catch(() => ({ documents: [] })),
     ]);
 
     const events: ClubEvent[] = eventsRes.documents.map((doc: any) => ({
@@ -208,207 +210,257 @@ export async function refreshFromAppwrite(): Promise<DB> {
     });
 
     cache = nextDb;
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(CACHE_KEY, JSON.stringify(nextDb));
-      } catch {
-        // ignore storage quota issues
-      }
-    }
     listeners.forEach((l) => l());
     return nextDb;
   } catch (err) {
     console.warn("[Appwrite Store] Refresh failed:", err);
-    return load();
+    return cache || emptyDB();
   }
 }
 
-/** Synchronizes changes asynchronously to Appwrite backend. */
-async function syncToAppwrite(prev: DB, next: DB) {
-  try {
-    // 1. Sync Events
-    for (const ev of next.events) {
-      const old = prev.events.find((e) => e.slug === ev.slug);
-      const payload = {
-        slug: ev.slug,
-        name: ev.name,
-        tagline: ev.tagline,
-        format: ev.format,
-        date: ev.date,
-        closes: ev.closes,
-        venue: ev.venue,
-        venueMap: ev.venueMap || null,
-        fee: ev.fee,
-        capacity: ev.capacity,
-        trophy: ev.trophy,
-        registrationOpen: ev.registrationOpen,
-        poster: typeof ev.poster === "string" ? ev.poster : "/src/assets/hero-pitch.jpg",
-        schedule: JSON.stringify(ev.schedule || []),
-        sections: JSON.stringify(ev.sections || []),
-        form: JSON.stringify(ev.form || {}),
-      };
+/** Synchronizes changes directly to Appwrite backend. Propagates errors to caller. */
+async function syncToAppwrite(prev: DB, next: DB): Promise<void> {
+  // 1. Sync Events
+  for (const ev of next.events) {
+    const old = prev.events.find((e) => e.slug === ev.slug);
 
-      if (!old) {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload).catch((err) => {
-          // If already exists under custom ID or random ID, update
-          return databases.updateDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload);
-        });
-      } else if (JSON.stringify(old) !== JSON.stringify(ev)) {
-        await databases.updateDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload).catch(() => {});
-      }
-    }
-    for (const ev of prev.events) {
-      if (!next.events.some((e) => e.slug === ev.slug)) {
-        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug).catch(() => {});
-      }
-    }
-
-    // 2. Sync Gallery Photos
-    for (const photo of next.gallery) {
-      const old = prev.gallery.find((p) => p.id === photo.id);
-      let fileId = photo.src;
-
-      // If base64 uploaded, store file in bucket first
-      if (photo.src.startsWith("data:")) {
-        try {
-          fileId = await uploadBase64Image(BUCKETS.GALLERY_PHOTOS, photo.src, "gallery");
-          photo.src = getFileUrl(BUCKETS.GALLERY_PHOTOS, fileId);
-        } catch (e) {
-          console.warn("[Store] Gallery photo upload failed:", e);
-        }
-      }
-
-      const payload = {
-        fileId,
-        title: photo.title,
-        width: photo.width,
-        height: photo.height,
-      };
-
-      if (!old) {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload).catch(() => {
-          return databases.updateDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload);
-        });
-      } else if (JSON.stringify(old) !== JSON.stringify(photo)) {
-        await databases.updateDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload).catch(() => {});
-      }
-    }
-    for (const photo of prev.gallery) {
-      if (!next.gallery.some((p) => p.id === photo.id)) {
-        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id).catch(() => {});
-      }
-    }
-
-    // 3. Sync Blog Posts
-    for (const post of next.posts) {
-      const old = prev.posts.find((p) => p.id === post.id);
-
-      // Check for base64 image blocks and upload to blog_images bucket
-      const processedBlocks = await Promise.all(
-        post.blocks.map(async (block) => {
-          if (block.type === "image" && block.content.startsWith("data:")) {
-            try {
-              const fileId = await uploadBase64Image(BUCKETS.BLOG_IMAGES, block.content, "blog");
-              return { ...block, content: getFileUrl(BUCKETS.BLOG_IMAGES, fileId) };
-            } catch (err) {
-              console.warn("[Store] Blog image upload failed:", err);
-              return block;
-            }
-          }
-          return block;
-        })
-      );
-      post.blocks = processedBlocks;
-
-      const payload = {
-        title: post.title,
-        blocks: JSON.stringify(post.blocks || []),
-        published: post.published,
-      };
-
-      if (!old) {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload).catch(() => {
-          return databases.updateDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload);
-        });
-      } else if (JSON.stringify(old) !== JSON.stringify(post)) {
-        await databases.updateDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload).catch(() => {});
-      }
-    }
-    for (const post of prev.posts) {
-      if (!next.posts.some((p) => p.id === post.id)) {
-        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id).catch(() => {});
-      }
-    }
-
-    // 4. Sync Registrations
-    for (const reg of next.registrations) {
-      const old = prev.registrations.find((r) => r.id === reg.id);
-      let fileId = reg.paymentScreenshot || "";
-
-      if (reg.paymentScreenshot && reg.paymentScreenshot.startsWith("data:")) {
-        try {
-          fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, reg.paymentScreenshot, "proof");
-        } catch (e) {
-          console.warn("[Store] Payment screenshot upload failed:", e);
-        }
-      }
-
-      const payload = {
-        ref: reg.ref,
-        eventSlug: reg.eventSlug,
-        values: JSON.stringify(reg.values || {}),
-        color: reg.color || null,
-        paymentScreenshot: fileId || "pending",
-        emailSent: reg.emailSent || false,
-        confirmed: reg.confirmed || false,
-        confirmedAt: reg.confirmedAt || null,
-      };
-
-      if (!old) {
-        await databases.createDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload).catch(() => {
-          return databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
-        });
-      } else if (JSON.stringify(old) !== JSON.stringify(reg)) {
-        await databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload).catch(() => {});
-      }
-    }
-  } catch (syncErr) {
-    console.error("[Store] Background sync to Appwrite encountered error:", syncErr);
-  }
-}
-
-function load(): DB {
-  if (cache) return cache;
-  if (typeof window !== "undefined") {
-    try {
-      const raw = localStorage.getItem(CACHE_KEY);
-      cache = raw ? normalize(JSON.parse(raw) as DB) : emptyDB();
-    } catch {
-      cache = emptyDB();
-    }
-    if (!isInitialized) {
-      isInitialized = true;
-      refreshFromAppwrite().catch(() => {});
-
-      // Setup Appwrite Realtime WebSocket subscription
+    let poster = ev.poster;
+    // Upload wallpaper image to storage bucket if base64 data URL
+    if (typeof poster === "string" && poster.startsWith("data:")) {
       try {
-        client.subscribe(
-          [
-            `databases.${DATABASE_ID}.collections.${COLLECTIONS.EVENTS}.documents`,
-            `databases.${DATABASE_ID}.collections.${COLLECTIONS.GALLERY}.documents`,
-            `databases.${DATABASE_ID}.collections.${COLLECTIONS.POSTS}.documents`,
-            `databases.${DATABASE_ID}.collections.${COLLECTIONS.REGISTRATIONS}.documents`,
-          ],
-          () => {
-            refreshFromAppwrite().catch(() => {});
-          }
-        );
-      } catch {
-        // Realtime fallback
+        const fileId = await uploadBase64Image(BUCKETS.GALLERY_PHOTOS, poster, "poster");
+        poster = getFileUrl(BUCKETS.GALLERY_PHOTOS, fileId);
+        ev.poster = poster;
+      } catch (err) {
+        console.error("[Store] Event poster upload failed:", err);
+        throw new Error("Failed to upload tournament poster to storage");
       }
     }
-  } else {
+
+    // Upload QR code to storage bucket if base64 data URL
+    let formObj = ev.form || {};
+    if (formObj.qr && typeof formObj.qr === "string" && formObj.qr.startsWith("data:")) {
+      try {
+        const fileId = await uploadBase64Image(BUCKETS.GALLERY_PHOTOS, formObj.qr, "qr");
+        formObj = { ...formObj, qr: getFileUrl(BUCKETS.GALLERY_PHOTOS, fileId) };
+        ev.form = formObj;
+      } catch (err) {
+        console.error("[Store] Form QR upload failed:", err);
+      }
+    }
+
+    const payload = {
+      name: ev.name,
+      slug: ev.slug,
+      tagline: ev.tagline,
+      format: ev.format,
+      date: ev.date,
+      closes: ev.closes,
+      venue: ev.venue,
+      venueMap: ev.venueMap || null,
+      fee: ev.fee,
+      capacity: ev.capacity,
+      trophy: ev.trophy,
+      registrationOpen: ev.registrationOpen,
+      poster: typeof poster === "string" && poster.length <= 512 ? poster : "/src/assets/hero-pitch.jpg",
+      schedule: JSON.stringify(ev.schedule || []),
+      sections: JSON.stringify(ev.sections || []),
+      form: JSON.stringify(formObj || {}),
+    };
+
+    if (!old) {
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload);
+      } catch (err: any) {
+        if (err?.code === 409) {
+          await databases.updateDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload);
+        } else {
+          throw err;
+        }
+      }
+    } else if (JSON.stringify(old) !== JSON.stringify(ev)) {
+      await databases.updateDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug, payload);
+    }
+  }
+
+  for (const ev of prev.events) {
+    if (!next.events.some((e) => e.slug === ev.slug)) {
+      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.EVENTS, ev.slug);
+    }
+  }
+
+  // 2. Sync Gallery Photos
+  for (const photo of next.gallery) {
+    const old = prev.gallery.find((p) => p.id === photo.id);
+    let fileId = photo.src;
+
+    if (photo.src.startsWith("data:")) {
+      fileId = await uploadBase64Image(BUCKETS.GALLERY_PHOTOS, photo.src, "gallery");
+      photo.src = getFileUrl(BUCKETS.GALLERY_PHOTOS, fileId);
+    } else if (photo.src.includes("/files/")) {
+      // Extract raw fileId from view URL if present
+      const match = photo.src.match(/\/files\/([^\/]+)/);
+      if (match?.[1]) {
+        fileId = match[1];
+      }
+    }
+
+    const payload = {
+      fileId,
+      title: photo.title,
+      width: photo.width,
+      height: photo.height,
+    };
+
+    if (!old) {
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload);
+      } catch (err: any) {
+        if (err?.code === 409) {
+          await databases.updateDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload);
+        } else {
+          throw err;
+        }
+      }
+    } else if (JSON.stringify(old) !== JSON.stringify(photo)) {
+      await databases.updateDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id, payload);
+    }
+  }
+
+  for (const photo of prev.gallery) {
+    if (!next.gallery.some((p) => p.id === photo.id)) {
+      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.GALLERY, photo.id);
+    }
+  }
+
+  // 3. Sync Blog Posts
+  for (const post of next.posts) {
+    const old = prev.posts.find((p) => p.id === post.id);
+
+    const processedBlocks = await Promise.all(
+      post.blocks.map(async (block) => {
+        if (block.type === "image" && block.content.startsWith("data:")) {
+          try {
+            const fileId = await uploadBase64Image(BUCKETS.BLOG_IMAGES, block.content, "blog");
+            return { ...block, content: getFileUrl(BUCKETS.BLOG_IMAGES, fileId) };
+          } catch (err) {
+            console.warn("[Store] Blog image upload failed:", err);
+            return block;
+          }
+        }
+        return block;
+      })
+    );
+    post.blocks = processedBlocks;
+
+    const payload = {
+      title: post.title,
+      blocks: JSON.stringify(post.blocks || []),
+      published: post.published,
+    };
+
+    if (!old) {
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload);
+      } catch (err: any) {
+        if (err?.code === 409) {
+          await databases.updateDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload);
+        } else {
+          throw err;
+        }
+      }
+    } else if (JSON.stringify(old) !== JSON.stringify(post)) {
+      try {
+        await databases.updateDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload);
+      } catch (err: any) {
+        if (err?.code === 404) {
+          // Document did not exist in cloud database yet, create it
+          await databases.createDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id, payload);
+        } else {
+          throw err;
+        }
+      }
+    }
+  }
+
+  for (const post of prev.posts) {
+    if (!next.posts.some((p) => p.id === post.id)) {
+      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.POSTS, post.id);
+    }
+  }
+
+  // 4. Sync Registrations
+  for (const reg of next.registrations) {
+    const old = prev.registrations.find((r) => r.id === reg.id);
+    let fileId = reg.paymentScreenshot || "";
+
+    if (reg.paymentScreenshot && reg.paymentScreenshot.startsWith("data:")) {
+      try {
+        fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, reg.paymentScreenshot, "proof");
+      } catch (e) {
+        console.warn("[Store] Payment screenshot upload failed:", e);
+      }
+    }
+
+    const payload = {
+      ref: reg.ref,
+      eventSlug: reg.eventSlug,
+      values: JSON.stringify(reg.values || {}),
+      color: reg.color || null,
+      paymentScreenshot: fileId || "pending",
+      emailSent: reg.emailSent || false,
+      confirmed: reg.confirmed || false,
+      confirmedAt: reg.confirmedAt || null,
+    };
+
+    if (!old) {
+      try {
+        await databases.createDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
+      } catch (err: any) {
+        if (err?.code === 409) {
+          await databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
+        } else {
+          throw err;
+        }
+      }
+    } else if (JSON.stringify(old) !== JSON.stringify(reg)) {
+      await databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
+    }
+  }
+
+  for (const reg of prev.registrations) {
+    if (!next.registrations.some((r) => r.id === reg.id)) {
+      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id);
+    }
+  }
+}
+
+function setupRealtime() {
+  try {
+    client.subscribe(
+      [
+        `databases.${DATABASE_ID}.collections.${COLLECTIONS.EVENTS}.documents`,
+        `databases.${DATABASE_ID}.collections.${COLLECTIONS.GALLERY}.documents`,
+        `databases.${DATABASE_ID}.collections.${COLLECTIONS.POSTS}.documents`,
+        `databases.${DATABASE_ID}.collections.${COLLECTIONS.REGISTRATIONS}.documents`,
+      ],
+      () => {
+        refreshFromAppwrite().catch(() => {});
+      }
+    );
+  } catch {
+    // Realtime fallback
+  }
+}
+
+export function load(): DB {
+  if (!cache) {
     cache = emptyDB();
+  }
+  if (typeof window !== "undefined" && !isInitialized) {
+    isInitialized = true;
+    refreshFromAppwrite().catch(() => {});
+    setupRealtime();
   }
   return cache;
 }
@@ -420,25 +472,25 @@ function subscribe(fn: () => void) {
   };
 }
 
-export function update(fn: (db: DB) => DB) {
-  const prev = load();
-  const next = normalize(fn(prev));
+/**
+ * Executes a state mutation by committing directly to Appwrite before updating local reactive store.
+ * Errors from Appwrite are propagated to the caller.
+ */
+export async function update(fn: (db: DB) => DB | Promise<DB>): Promise<DB> {
+  const prev = cache ? { ...cache } : emptyDB();
+  const next = normalize(await fn(prev));
+
+  // 1. Commit changes to Appwrite backend first
+  await syncToAppwrite(prev, next);
+
+  // 2. Update reactive cache and notify subscribers
   cache = next;
-
-  if (typeof window !== "undefined") {
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify(next));
-    } catch {
-      // ignore storage quota
-    }
-  }
-
   listeners.forEach((l) => l());
 
-  // Fire-and-forget sync to Appwrite backend
-  syncToAppwrite(prev, next).catch((err) => {
-    console.error("[Store] Sync error:", err);
-  });
+  // 3. Re-sync from server to maintain single source of truth
+  refreshFromAppwrite().catch(() => {});
+
+  return next;
 }
 
 export function useDB(): DB {
@@ -446,13 +498,13 @@ export function useDB(): DB {
 }
 
 /** All registration constraints and reference allocation run against the latest store. */
-export function addRegistration(
+export async function addRegistration(
   eventSlug: string,
   values: Registration["values"],
   color?: string,
   paymentScreenshot?: string
-): Registration {
-  const currentDb = load();
+): Promise<Registration> {
+  const currentDb = cache || emptyDB();
   const event = currentDb.events.find((e) => e.slug === eventSlug);
   const registrations = currentDb.registrations.filter((r) => r.eventSlug === eventSlug);
 
@@ -465,9 +517,31 @@ export function addRegistration(
   if (color && registrations.some((r) => r.color === color))
     throw new Error("That color was just taken — please pick another.");
 
+  let fileId = paymentScreenshot || "";
+  if (paymentScreenshot && paymentScreenshot.startsWith("data:")) {
+    try {
+      fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, paymentScreenshot, "proof");
+    } catch (e) {
+      console.warn("[Store] Payment screenshot upload failed:", e);
+    }
+  }
+
   const allExistingRefs = currentDb.registrations.map((r) => r.ref);
   const ref = registrationReference(allExistingRefs);
   const regId = (typeof crypto !== "undefined" && crypto.randomUUID) ? crypto.randomUUID() : uid();
+
+  const payload = {
+    ref,
+    eventSlug,
+    values: JSON.stringify(values || {}),
+    color: color || null,
+    paymentScreenshot: fileId || "pending",
+    emailSent: false,
+    confirmed: false,
+    confirmedAt: null,
+  };
+
+  await databases.createDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, regId, payload);
 
   const saved: Registration = {
     id: regId,
@@ -475,17 +549,21 @@ export function addRegistration(
     eventSlug,
     values,
     color,
-    paymentScreenshot,
+    paymentScreenshot: fileId ? getFileUrl(BUCKETS.PAYMENT_PROOFS, fileId) : undefined,
     createdAt: new Date().toISOString(),
   };
 
-  update((db) => ({
-    ...db,
-    registrations: [...db.registrations, saved],
-  }));
+  // Update in-memory reactive cache
+  if (cache) {
+    cache = {
+      ...cache,
+      registrations: [...cache.registrations, saved],
+    };
+    listeners.forEach((l) => l());
+  }
 
   // Immediately log reference generation to reference_history
-  logReferenceHistory(ref, eventSlug, regId).catch((err) => {
+  await logReferenceHistory(ref, eventSlug, regId).catch((err) => {
     console.warn("[Store] Reference history log error:", err);
   });
 
@@ -498,8 +576,8 @@ export async function logAdminAction(
   targetType: AdminTargetType,
   targetId: string,
   summary: string,
-  metadata?: Record<string, any>,
-  actorOverride?: { id: string; name: string }
+  metadata?: Record<string, any> | undefined,
+  actorOverride?: { id: string; name: string } | undefined
 ): Promise<void> {
   try {
     let actorId = actorOverride?.id || "admin";
@@ -542,7 +620,7 @@ export async function logReferenceHistory(
   ref: string,
   eventSlug: string,
   registrationId: string,
-  ipHint?: string
+  ipHint?: string | undefined
 ): Promise<void> {
   let attempts = 3;
   while (attempts > 0) {
@@ -573,13 +651,13 @@ export async function logReferenceHistory(
 
 /** Queries admin_history documents with filtering, sorting, and pagination. */
 export async function fetchAdminHistory(params?: {
-  limit?: number;
-  offset?: number;
-  actorId?: string;
-  action?: string;
-  targetType?: string;
-  startDate?: string;
-  endDate?: string;
+  limit?: number | undefined;
+  offset?: number | undefined;
+  actorId?: string | undefined;
+  action?: string | undefined;
+  targetType?: string | undefined;
+  startDate?: string | undefined;
+  endDate?: string | undefined;
 }): Promise<{ total: number; entries: AdminHistoryEntry[] }> {
   try {
     const queries = [
@@ -635,9 +713,9 @@ export async function fetchAdminHistory(params?: {
 
 /** Queries reference_history documents for a tournament with sorting and pagination. */
 export async function fetchReferenceHistory(params?: {
-  eventSlug?: string;
-  limit?: number;
-  offset?: number;
+  eventSlug?: string | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
 }): Promise<{ total: number; entries: ReferenceHistoryEntry[] }> {
   try {
     const queries = [

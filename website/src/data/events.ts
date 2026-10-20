@@ -76,10 +76,10 @@ export interface Registration {
   values: Record<string, string | string[]>;
   color?: string | undefined;
   createdAt: string;
-  paymentScreenshot?: string;
-  emailSent?: boolean;
-  confirmed?: boolean;
-  confirmedAt?: string;
+  paymentScreenshot?: string | undefined;
+  emailSent?: boolean | undefined;
+  confirmed?: boolean | undefined;
+  confirmedAt?: string | undefined;
 }
 
 export interface Photo {

@@ -168,7 +168,7 @@ function AdminUsersPage() {
           password: editPassword || undefined,
         },
       });
-      toast.success(`Admin details for "${editUser.name}" updated!`);
+      toast.success(`Admin details for "${editName.trim() || editUser.name}" updated!`);
       setEditUser(null);
       setEditName("");
       setEditEmail("");

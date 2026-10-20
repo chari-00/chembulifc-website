@@ -6,17 +6,17 @@ export interface AdminUserRecord {
   name: string;
   email: string;
   $createdAt: string;
-  accessedAt?: string;
+  accessedAt?: string | undefined;
   labels: string[];
   isSuperAdmin: boolean;
-  membershipId?: string;
+  membershipId?: string | undefined;
   status: boolean;
 }
 
 function getAdminServerSdk() {
-  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
-  const projectId = process.env.VITE_APPWRITE_PROJECT_ID || "6ad70b6a00259c48c1b5";
-  const apiKey = process.env.APPWRITE_API_KEY;
+  const endpoint = (process.env["VITE_APPWRITE_ENDPOINT"] as string) || "https://sgp.cloud.appwrite.io/v1";
+  const projectId = (process.env["VITE_APPWRITE_PROJECT_ID"] as string) || "6ad70b6a00259c48c1b5";
+  const apiKey = process.env["APPWRITE_API_KEY"];
 
   if (!apiKey) {
     throw new Error(
@@ -47,7 +47,7 @@ async function recordServerAdminHistory(
 ) {
   try {
     const { databases } = getAdminServerSdk();
-    const databaseId = process.env.VITE_APPWRITE_DATABASE_ID || "chembuli_db";
+    const databaseId = (process.env["VITE_APPWRITE_DATABASE_ID"] as string) || "chembuli_db";
     await databases.createDocument(
       databaseId,
       "admin_history",
@@ -69,8 +69,8 @@ async function recordServerAdminHistory(
 }
 
 async function verifySuperAdminCaller(jwt: string) {
-  const endpoint = process.env.VITE_APPWRITE_ENDPOINT || "https://sgp.cloud.appwrite.io/v1";
-  const projectId = process.env.VITE_APPWRITE_PROJECT_ID || "6ad70b6a00259c48c1b5";
+  const endpoint = (process.env["VITE_APPWRITE_ENDPOINT"] as string) || "https://sgp.cloud.appwrite.io/v1";
+  const projectId = (process.env["VITE_APPWRITE_PROJECT_ID"] as string) || "6ad70b6a00259c48c1b5";
 
   if (!jwt) {
     throw new Error("Authentication token is required");
@@ -211,9 +211,9 @@ export const updateAdminFn = createServerFn({ method: "POST" })
     (d: {
       jwt: string;
       userId: string;
-      name?: string;
-      email?: string;
-      password?: string;
+      name?: string | undefined;
+      email?: string | undefined;
+      password?: string | undefined;
     }) => {
       if (!d?.jwt) throw new Error("JWT token is required");
       if (!d?.userId?.trim()) throw new Error("User ID is required");
@@ -255,7 +255,8 @@ export const updateAdminFn = createServerFn({ method: "POST" })
       await users.updateName(data.userId, data.name.trim());
     }
 
-    if (data.email?.trim()) {
+    // Guard: Only update email if it is actually different to prevent 409 user_target_already_exists
+    if (data.email?.trim() && data.email.trim().toLowerCase() !== targetUser.email.toLowerCase()) {
       await users.updateEmail(data.userId, data.email.trim().toLowerCase());
     }
 

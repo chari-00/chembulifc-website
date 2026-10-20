@@ -23,11 +23,11 @@ function AdminBlog() {
       {posts.map((post) => <div key={post.id} className="flex items-center gap-3 py-5">
         <Link to="/admin/blog/$id" params={{ id: post.id }} className="min-w-0 flex-1"><h2 className="break-words text-2xl font-bold uppercase hover:text-primary">{post.title}</h2><p className="mt-1 text-sm text-muted-foreground">{post.published ? "Published" : "Draft"} · {formatDate(post.updatedAt)}</p></Link>
         <Button asChild variant="ghost" size="icon"><Link to="/admin/blog/$id" params={{ id: post.id }} aria-label={`Edit ${post.title}`} title="Edit post"><Pencil /></Link></Button>
-        <Button variant="ghost" size="icon" aria-label={`Delete ${post.title}`} title="Delete post" onClick={() => {
+        <Button variant="ghost" size="icon" aria-label={`Delete ${post.title}`} title="Delete post" onClick={async () => {
           if (!confirm(`Delete “${post.title}”?`)) return;
           try {
-            update((db) => ({ ...db, posts: db.posts.filter((p) => p.id !== post.id) }));
-            logAdminAction("blog.delete", "post", post.id, `Deleted blog post "${post.title}"`, { id: post.id, title: post.title }).catch(() => {});
+            await update((db) => ({ ...db, posts: db.posts.filter((p) => p.id !== post.id) }));
+            await logAdminAction("blog.delete", "post", post.id, `Deleted blog post "${post.title}"`, { id: post.id, title: post.title }).catch(() => {});
             toast.success("Post deleted");
           } catch (error) { toast.error((error as Error).message); }
         }}><Trash2 className="text-destructive" /></Button>

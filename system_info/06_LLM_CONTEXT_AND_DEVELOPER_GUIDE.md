@@ -59,6 +59,13 @@ When working on this repository, you must observe these strict constraints:
 > Never statically import Node built-in modules (`node:fs`, `node:path`, `node:url`) or server-only packages (`nodemailer`) in files imported by route components (e.g. `src/lib/email.functions.ts`).
 > Define server implementations in dedicated `.server.ts` files (e.g. `src/lib/email.server.ts`) and load them dynamically inside `createServerFn` handlers. Otherwise, Vite bundles them into client route chunks, causing runtime `ReferenceError: Buffer is not defined` crashes.
 
+> [!CAUTION]
+> **10. NEVER READ OR WRITE LOCALSTORAGE/SESSIONSTORAGE FOR APPLICATION DATA OR AUTH STATE**
+> `store.ts` and admin auth must NEVER read or write `localStorage`/`sessionStorage` for application data or login state — Appwrite cloud database and Appwrite Auth sessions are the only source of truth.
+> - Data operations must read directly from Appwrite (`refreshFromAppwrite`) and await cloud synchronization (`update() -> syncToAppwrite`).
+> - Media such as event wallpapers and QR codes must be uploaded to Appwrite Storage buckets (`BUCKETS.GALLERY_PHOTOS`) and referenced via short URLs (< 512 chars), never stored as raw Base64 in database columns.
+> - Admin session validity must always query `account.get()` directly against Appwrite Auth, never a local token/flag.
+> - `localStorage` and `sessionStorage` are strictly reserved for genuine per-device UI preferences (e.g. remembering which tab was last open), never persistent application data.
 
 ---
 

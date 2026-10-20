@@ -162,7 +162,8 @@ function EventPage() {
         throw new Error("Please upload a JPG, PNG or WebP UPI Payment Screenshot.");
       }
       const image = await fileToImage(screenshot, 1800, 0.9);
-      id = addRegistration(event.slug, values, color, image.src).ref;
+      const reg = await addRegistration(event.slug, values, color, image.src);
+      id = reg.ref;
     } catch (err) {
       setBusy(false);
       toast.error((err as Error).message);

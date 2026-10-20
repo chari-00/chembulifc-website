@@ -89,6 +89,7 @@ export interface DB {
 3. **Reactive Synchronization**: Built using React 19's `useSyncExternalStore` and custom pub/sub listener set. Local memory cache ensures instant optimistic updates and zero UI lag.
 4. **Audit Logging Dispatches**: Mutating operations trigger asynchronous dispatches to `logAdminAction(...)` (`admin_history`) and `logReferenceHistory(...)` (`reference_history`).
 5. **Source of Truth & Zero Runtime Seed Fallback**: Live Appwrite collections are the sole authoritative source of truth. Seed data (`seedEvents`, `seedGallery`) is strictly reserved for the one-time database setup script (`scripts/seed-appwrite.ts`) and is never used as a runtime fallback in `refreshFromAppwrite()` or regular read paths. An empty collection in Appwrite is legitimately empty, preventing deleted tournaments or photos from reappearing.
+6. **Hard Golden Rule: Zero LocalStorage/SessionStorage Dependency**: `store.ts` and admin auth must NEVER read or write `localStorage`/`sessionStorage` for application data or login state — Appwrite cloud database and Appwrite Auth sessions are the only source of truth. In-memory cache is populated from Appwrite reads and synchronized via awaitable Appwrite mutations (`syncToAppwrite`). LocalStorage/sessionStorage must never represent real application data or auth state.
 
 ---
 

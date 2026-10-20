@@ -54,21 +54,25 @@ function AdminEvents() {
             <button
               aria-label="Delete"
               className="p-2 hover:text-destructive"
-              onClick={() => {
+              onClick={async () => {
                 if (!confirm(`Delete "${e.name}" and its registrations?`)) return;
-                update((d) => ({
-                  ...d,
-                  events: d.events.filter((x) => x.slug !== e.slug),
-                  registrations: d.registrations.filter((r) => r.eventSlug !== e.slug),
-                }));
-                logAdminAction(
-                  "event.delete",
-                  "event",
-                  e.slug,
-                  `Deleted tournament "${e.name}" and all associated registrations`,
-                  { name: e.name, slug: e.slug }
-                ).catch(() => {});
-                toast.success("Event deleted");
+                try {
+                  await update((d) => ({
+                    ...d,
+                    events: d.events.filter((x) => x.slug !== e.slug),
+                    registrations: d.registrations.filter((r) => r.eventSlug !== e.slug),
+                  }));
+                  logAdminAction(
+                    "event.delete",
+                    "event",
+                    e.slug,
+                    `Deleted tournament "${e.name}" and all associated registrations`,
+                    { name: e.name, slug: e.slug }
+                  ).catch(() => {});
+                  toast.success("Event deleted");
+                } catch (err) {
+                  toast.error((err as Error).message);
+                }
               }}
             >
               <Trash2 className="h-4 w-4" />
