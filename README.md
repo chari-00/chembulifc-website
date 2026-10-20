@@ -2,6 +2,8 @@
 
 Official web platform and tournament management system for **Chembuli Football Club**, built with modern full-stack TypeScript, TanStack Start (SSR), Tailwind CSS, and Appwrite Backend-as-a-Service.
 
+- **Production Live Site**: [https://chembuli-fc.appwrite.network](https://chembuli-fc.appwrite.network)
+
 ## Project Structure
 
 - `website/` — The full-stack web application (TanStack Start, Nitro SSR, React 19, Tailwind CSS, Lucide icons, Vite).

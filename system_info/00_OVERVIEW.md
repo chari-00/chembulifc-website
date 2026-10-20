@@ -44,12 +44,14 @@
 - **Embla Carousel (`v8.6.0`)**: Smooth, touch-friendly responsive carousel components.
 - **Lucide React (`v0.575.0`)**: Cohesive modern icon system.
 
-### Build & Tooling
-- **Vite (`v8.1.5`)**: Ultra-fast module bundler and dev server.
-- **Nitro (`v3.0.260603-beta`)**: Portable server engine that builds presets for Cloudflare Pages/Workers, Node, or edge runtimes.
-- **Vitest (`v4.1.12`)**: High-speed unit and integration test runner with `@testing-library/react` and `jsdom`.
-- **Prettier (`v3.7.3`)** & **ESLint (`v9.32.0`)**: Code formatting and linting standards.
-- **Dual Lockfile Support**: Compatible with both `npm` (`package-lock.json`) for local Windows/Node environments and `bun` (`bun.lock`, `bunfig.toml`) for containerized / Lovable deployments.
+### Production Deployment (Appwrite Sites)
+- **Live URL**: [`https://chembuli-fc.appwrite.network`](https://chembuli-fc.appwrite.network)
+- **Host**: Appwrite Sites (Project `chembuli-website`, ID `6ad70b6a00259c48c1b5`, Region `sgp`)
+- **Site ID**: `6ad741c0000a8fecb4b7`
+- **Connected Repository**: [`chari-00/chembulifc-website`](https://github.com/chari-00/chembulifc-website.git) (Branch: `main`, Root Directory: `website`)
+- **Runtime & Strategy**: Node.js 22 (`buildRuntime: node-22`), SSR (`adapter: ssr`)
+- **Output Directory**: `./.output` (Nitro v3 server & public assets)
+- **Continuous Deployment**: Automated on push to `main` via Appwrite VCS integration.
 
 ---
 
