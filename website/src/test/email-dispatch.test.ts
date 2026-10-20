@@ -7,7 +7,7 @@ import {
   buildRegistrationEmailText,
   buildRegistrationEmailAttachments,
   getSignatureImagePath,
-} from "../lib/email.functions";
+} from "../lib/email.server";
 
 describe("sendRegistrationEmail (Gmail SMTP Transport & Rich HTML)", () => {
   const originalEnv = process.env;

@@ -88,7 +88,7 @@ export interface DB {
 2. **Appwrite Cloud Persistence**: Real-time reads from Appwrite Database `chembuli_db` collections (`events`, `registrations`, `gallery`, `posts`).
 3. **Reactive Synchronization**: Built using React 19's `useSyncExternalStore` and custom pub/sub listener set. Local memory cache ensures instant optimistic updates and zero UI lag.
 4. **Audit Logging Dispatches**: Mutating operations trigger asynchronous dispatches to `logAdminAction(...)` (`admin_history`) and `logReferenceHistory(...)` (`reference_history`).
-5. **Initial Seeding**: Fallback seed data in `src/data/events.ts` and `scripts/seed-appwrite.ts` allows immediate database initialization.
+5. **Source of Truth & Zero Runtime Seed Fallback**: Live Appwrite collections are the sole authoritative source of truth. Seed data (`seedEvents`, `seedGallery`) is strictly reserved for the one-time database setup script (`scripts/seed-appwrite.ts`) and is never used as a runtime fallback in `refreshFromAppwrite()` or regular read paths. An empty collection in Appwrite is legitimately empty, preventing deleted tournaments or photos from reappearing.
 
 ---
 

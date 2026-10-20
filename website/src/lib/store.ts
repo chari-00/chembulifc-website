@@ -7,8 +7,6 @@ import {
   type Registration,
   eventStatus,
   generateColors,
-  seedEvents,
-  seedGallery,
   registrationReference,
   validPaymentScreenshot,
   uid,
@@ -75,8 +73,8 @@ export interface ReferenceHistoryEntry {
 }
 
 const CACHE_KEY = "cfc-appwrite-cache-v1";
-const seed = (): DB => ({ events: seedEvents, gallery: seedGallery, registrations: [], posts: [] });
-const serverSnapshot = seed();
+const emptyDB = (): DB => ({ events: [], gallery: [], registrations: [], posts: [] });
+const serverSnapshot = emptyDB();
 let cache: DB | null = null;
 const listeners = new Set<() => void>();
 let isInitialized = false;
@@ -143,10 +141,10 @@ async function uploadBase64Image(bucketId: string, dataUrl: string, prefix = "im
 export async function refreshFromAppwrite(): Promise<DB> {
   try {
     const [eventsRes, galleryRes, postsRes, regsRes] = await Promise.all([
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.EVENTS, [Query.limit(100)]).catch(() => ({ documents: [] })),
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.GALLERY, [Query.limit(100)]).catch(() => ({ documents: [] })),
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.POSTS, [Query.limit(100)]).catch(() => ({ documents: [] })),
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]).catch(() => ({ documents: [] })),
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.EVENTS, [Query.limit(100)]),
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.GALLERY, [Query.orderDesc("$createdAt"), Query.limit(100)]),
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.POSTS, [Query.limit(100)]),
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]),
     ]);
 
     const events: ClubEvent[] = eventsRes.documents.map((doc: any) => ({
@@ -203,8 +201,8 @@ export async function refreshFromAppwrite(): Promise<DB> {
     }));
 
     const nextDb: DB = normalize({
-      events: events.length > 0 ? events : (cache?.events.length ? cache.events : seedEvents),
-      gallery: gallery.length > 0 ? gallery : (cache?.gallery.length ? cache.gallery : seedGallery),
+      events,
+      gallery,
       posts,
       registrations,
     });
@@ -220,7 +218,7 @@ export async function refreshFromAppwrite(): Promise<DB> {
     listeners.forEach((l) => l());
     return nextDb;
   } catch (err) {
-    console.warn("[Appwrite Store] Refresh fallback to local cache:", err);
+    console.warn("[Appwrite Store] Refresh failed:", err);
     return load();
   }
 }
@@ -384,9 +382,9 @@ function load(): DB {
   if (typeof window !== "undefined") {
     try {
       const raw = localStorage.getItem(CACHE_KEY);
-      cache = raw ? normalize(JSON.parse(raw) as DB) : seed();
+      cache = raw ? normalize(JSON.parse(raw) as DB) : emptyDB();
     } catch {
-      cache = seed();
+      cache = emptyDB();
     }
     if (!isInitialized) {
       isInitialized = true;
@@ -410,7 +408,7 @@ function load(): DB {
       }
     }
   } else {
-    cache = seed();
+    cache = emptyDB();
   }
   return cache;
 }

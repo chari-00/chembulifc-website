@@ -48,6 +48,17 @@ When working on this repository, you must observe these strict constraints:
 > **7. SUPER-ADMIN HARD-LOCK SECURITY**
 > Account `chari` (and any user holding the `superadmin` label) is permanently protected against deletion or role demotion both in UI controls and on server functions (`deleteAdminFn`).
 
+> [!IMPORTANT]
+> **8. ZERO RUNTIME SEED FALLBACK IN THE LIVE READ PATH**
+> Never fall back to seed data (`seedEvents`, `seedGallery`) inside `src/lib/store.ts` when a collection is empty or queried.
+> Live Appwrite state is the authoritative source of truth. An empty response means the collection has 0 items (e.g. after deletion); falling back to seed data causes deleted tournaments or photos to reappear.
+> Seed data must only be utilized for one-time manual initialization via `scripts/seed-appwrite.ts`.
+
+> [!IMPORTANT]
+> **9. ISOLATE NODE BUILT-INS & SERVER CODE FROM CLIENT ROUTE BUNDLES**
+> Never statically import Node built-in modules (`node:fs`, `node:path`, `node:url`) or server-only packages (`nodemailer`) in files imported by route components (e.g. `src/lib/email.functions.ts`).
+> Define server implementations in dedicated `.server.ts` files (e.g. `src/lib/email.server.ts`) and load them dynamically inside `createServerFn` handlers. Otherwise, Vite bundles them into client route chunks, causing runtime `ReferenceError: Buffer is not defined` crashes.
+
 
 ---
 

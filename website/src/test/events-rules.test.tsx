@@ -1,7 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { blankEvent, eventStatus, generateColors, nextEvent, registrationReference, registrationReferenceWithFallback, validVenueMap, confirmationMessageEnabled, canConfirmRegistration, validPaymentScreenshot, type Registration } from "@/data/events";
-import { addRegistration, update, useDB } from "@/lib/store";
-import { renderHook } from "@testing-library/react";
+import { addRegistration, refreshFromAppwrite, update, useDB } from "@/lib/store";
+import { databases, COLLECTIONS } from "@/lib/appwrite";
+import { renderHook, act } from "@testing-library/react";
 
 const at = (iso: string) => new Date(iso).getTime();
 
@@ -110,3 +111,77 @@ describe("registration options", () => {
     expect(canConfirmRegistration(form, { ...registration, emailSent: true })).toBe(true);
   });
 });
+
+describe("event deletion persistence (Bug 1 regression check)", () => {
+  it("a deleted event does not reappear after cache refresh / reload", async () => {
+    // 1. Setup store with two events
+    const ev1 = { ...blankEvent(), slug: "keep-cup", name: "Keep Cup" };
+    const ev2 = { ...blankEvent(), slug: "delete-cup", name: "Delete Cup" };
+    act(() => {
+      update((db) => ({ ...db, events: [ev1, ev2] }));
+    });
+
+    const { result, unmount } = renderHook(() => useDB());
+    expect(result.current.events.map((e) => e.slug)).toContain("delete-cup");
+
+    // 2. Admin deletes "delete-cup"
+    act(() => {
+      update((db) => ({
+        ...db,
+        events: db.events.filter((e) => e.slug !== "delete-cup"),
+      }));
+    });
+    expect(result.current.events.map((e) => e.slug)).not.toContain("delete-cup");
+    expect(result.current.events.map((e) => e.slug)).toEqual(["keep-cup"]);
+
+    // 3. Mock Appwrite returning live state (only "keep-cup" exists in Appwrite)
+    const listSpy = vi.spyOn(databases, "listDocuments").mockImplementation(async (_dbId, colId) => {
+      if (colId === COLLECTIONS.EVENTS) {
+        return {
+          total: 1,
+          documents: [
+            {
+              $id: "keep-cup",
+              slug: "keep-cup",
+              name: "Keep Cup",
+              tagline: "Live tournament",
+              format: "7v7",
+              date: "2026-12-01T10:00:00Z",
+              closes: "2026-11-20T10:00:00Z",
+              venue: "Chembuli Turf",
+              fee: 1000,
+              capacity: 16,
+              trophy: "Trophy",
+              registrationOpen: true,
+              poster: "/poster.jpg",
+              schedule: "[]",
+              sections: "[]",
+              form: "{}",
+            },
+          ],
+        } as any;
+      }
+      return { total: 0, documents: [] } as any;
+    });
+
+    // 4. Trigger refreshFromAppwrite (as happens on reload / realtime update)
+    await act(async () => {
+      await refreshFromAppwrite();
+    });
+
+    // 5. Verify "delete-cup" has NOT reappeared, and seed data is NOT resurrected
+    expect(result.current.events.map((e) => e.slug)).toEqual(["keep-cup"]);
+    expect(result.current.events.map((e) => e.slug)).not.toContain("delete-cup");
+
+    // 6. Even if Appwrite returns 0 events (all deleted), it must reflect empty array, NOT fallback to seedEvents
+    listSpy.mockImplementation(async () => ({ total: 0, documents: [] } as any));
+    await act(async () => {
+      await refreshFromAppwrite();
+    });
+    expect(result.current.events).toEqual([]);
+
+    listSpy.mockRestore();
+    unmount();
+  });
+});
+

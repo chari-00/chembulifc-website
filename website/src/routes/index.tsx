@@ -54,6 +54,7 @@ function useCountdown(target: string) {
 function Home() {
   const events = useLiveEvents();
   const { gallery } = useDB();
+  const carouselPhotos = gallery.slice(0, 7);
   const featured = nextEvent(events);
   const cd = useCountdown(featured?.date ?? new Date().toISOString());
   const spotsLeft = events
@@ -341,9 +342,9 @@ function Home() {
         </AnimatedContent>
         <div className="relative mt-16 h-[560px] w-full">
           <ClientOnly fallback={<div className="h-full w-full bg-card/40" />}>
-            {gallery.length > 0 && (
+            {carouselPhotos.length > 0 ? (
               <FlexCarousel
-                items={gallery.map((p) => ({ src: p.src, alt: p.title, title: p.title }))}
+                items={carouselPhotos.map((p) => ({ src: p.src, alt: p.title, title: p.title }))}
                 preset="liquid"
                 intro="rise"
                 cardHeight={0.6}
@@ -353,6 +354,12 @@ function Home() {
                 captions
                 captureWheel={false}
               />
+            ) : (
+              <div className="flex h-full w-full items-center justify-center border border-dashed border-border bg-card/20">
+                <p className="font-display uppercase tracking-widest text-muted-foreground">
+                  Match photos coming soon.
+                </p>
+              </div>
             )}
           </ClientOnly>
         </div>
