@@ -27,5 +27,3 @@ npm run dev
 - TypeScript
 - React
 - Tailwind CSS
-
-<!-- ci webhook test -->
