@@ -406,9 +406,12 @@
             "$id": "payment_proofs",
             "$permissions": [
                 "create(\"any\")",
-                "read(\"users\")",
-                "update(\"users\")",
-                "delete(\"users\")"
+                "read(\"team:admins\")",
+                "read(\"label:superadmin\")",
+                "update(\"team:admins\")",
+                "update(\"label:superadmin\")",
+                "delete(\"team:admins\")",
+                "delete(\"label:superadmin\")"
             ],
             "fileSecurity": false,
             "name": "payment_proofs",

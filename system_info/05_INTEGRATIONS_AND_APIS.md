@@ -143,9 +143,14 @@ The data layer in `src/lib/store.ts` connects to an active [Appwrite](https://ap
 - **Permissions**: `create("any")`, `read("users")`.
 
 #### Storage Bucket: `payment_proofs`
-- Max file size: 5 MB.
-- Allowed MIME types: `image/jpeg`, `image/png`, `image/webp`.
-- Permissions: Public create (with tournament registration), Read restricted to Admin role.
+- Max file size: 5 MB (`5242880` bytes).
+- Allowed MIME types: `image/jpeg`, `image/png`, `image/webp` (`jpg`, `jpeg`, `png`, `webp`).
+- Permissions:
+  - Create: `create("any")` (Public upload with tournament registration).
+  - Read: `read("team:admins")`, `read("label:superadmin")` (Restricted strictly to members of the `admins` Team and super-admin `chari`; unauthorized/guest reads rejected with 401).
+  - Update: `update("team:admins")`, `update("label:superadmin")`.
+  - Delete: `delete("team:admins")`, `delete("label:superadmin")`.
+- File Security: `false` (bucket-level permissions control read access).
 
 #### Storage Bucket: `gallery_photos`
 - Max file size: 20 MB.

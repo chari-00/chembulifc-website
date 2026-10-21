@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useState, type ReactNode } from "react";
-import { ArrowDown, ArrowUp, CheckCircle2, Copy, Download, History, Mail, Plus, RefreshCw, Trash2, Upload, X } from "lucide-react";
+import { ArrowDown, ArrowUp, CheckCircle2, Copy, Download, History, Loader2, Mail, Plus, RefreshCw, Trash2, Upload, X, ZoomIn } from "lucide-react";
 import { toast } from "sonner";
 import {
   blankEvent,
@@ -23,6 +23,8 @@ import { exportRegistrationsToCsv } from "@/lib/csv-export";
 import { pageHead } from "@/lib/page-head";
 import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
+import { client, storage, BUCKETS } from "@/lib/appwrite";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/admin/events/$id")({
   head: () => pageHead("Edit Tournament — Chembuli FC Admin", "Edit event details, team registration forms and registrations.", true),
@@ -830,10 +832,14 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                     <dt className="text-xs uppercase tracking-widest text-muted-foreground">UPI Payment Screenshot</dt>
                     <dd className="mt-2">
                       {r.paymentScreenshot && r.paymentScreenshot !== "pending" ? (
-                        <a href={r.paymentScreenshot} target="_blank" rel="noopener noreferrer" download={`${r.ref}-payment.jpg`} className="block w-fit" title="Download payment screenshot">
-                          <img src={r.paymentScreenshot} alt={`UPI Payment Screenshot for ${String(r.values["team"] ?? "team")}`} className="max-h-96 max-w-full border border-border object-contain" />
-                        </a>
-                      ) : <span className="text-muted-foreground">Not provided</span>}
+                        <PaymentScreenshotViewer
+                          paymentScreenshot={r.paymentScreenshot}
+                          refCode={r.ref}
+                          teamName={String(r.values["team"] ?? "Team")}
+                        />
+                      ) : (
+                        <span className="text-sm italic text-muted-foreground">Not provided</span>
+                      )}
                     </dd>
                   </div>
                   <div>
@@ -1072,3 +1078,162 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
     </div>
   );
 }
+
+function PaymentScreenshotViewer({
+  paymentScreenshot,
+  refCode,
+  teamName,
+}: {
+  paymentScreenshot: string;
+  refCode: string;
+  teamName: string;
+}) {
+  const [blobUrl, setBlobUrl] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [openModal, setOpenModal] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    let urlToRevoke: string | null = null;
+
+    if (!paymentScreenshot || paymentScreenshot === "pending") {
+      setLoading(false);
+      return;
+    }
+
+    if (paymentScreenshot.startsWith("data:")) {
+      setBlobUrl(paymentScreenshot);
+      setLoading(false);
+      return;
+    }
+
+    async function load() {
+      try {
+        setLoading(true);
+        setError(null);
+        let fileId = paymentScreenshot;
+        if (paymentScreenshot.includes("/files/")) {
+          const match = paymentScreenshot.match(/\/files\/([^\/\?]+)/);
+          if (match?.[1]) fileId = match[1];
+        }
+
+        const viewUrl = storage.getFileView(BUCKETS.PAYMENT_PROOFS, fileId).toString();
+        // Uses Appwrite Client SDK session (authenticated request with X-Fallback-Cookies & credentials)
+        const arrayBuffer = (await client.call(
+          "GET",
+          new URL(viewUrl),
+          {},
+          {},
+          "arrayBuffer"
+        )) as ArrayBuffer;
+
+        if (!active) return;
+        const blob = new Blob([arrayBuffer], { type: "image/jpeg" });
+        const objUrl = URL.createObjectURL(blob);
+        urlToRevoke = objUrl;
+        setBlobUrl(objUrl);
+        setLoading(false);
+      } catch (err: any) {
+        if (!active) return;
+        console.error("Failed to load payment screenshot:", err);
+        setError(err?.message || "Failed to load image");
+        setLoading(false);
+      }
+    }
+
+    load();
+
+    return () => {
+      active = false;
+      if (urlToRevoke) {
+        URL.revokeObjectURL(urlToRevoke);
+      }
+    };
+  }, [paymentScreenshot]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 py-4 text-xs text-muted-foreground">
+        <Loader2 className="h-4 w-4 animate-spin text-primary" />
+        <span>Loading payment proof securely...</span>
+      </div>
+    );
+  }
+
+  if (error || !blobUrl) {
+    return (
+      <div className="rounded border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
+        <p className="font-semibold">Unable to load payment screenshot</p>
+        <p className="mt-0.5 text-muted-foreground">{error || "Image not available"}</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-2">
+      <button
+        type="button"
+        onClick={() => setOpenModal(true)}
+        className="group relative block w-fit overflow-hidden border border-border transition hover:border-primary focus:outline-none"
+        title="Click to inspect full size"
+      >
+        <img
+          src={blobUrl}
+          alt={`UPI Payment Screenshot for ${teamName}`}
+          className="max-h-96 max-w-full cursor-zoom-in object-contain"
+        />
+        <div className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition group-hover:opacity-100">
+          <span className="flex items-center gap-1.5 rounded bg-black/80 px-2.5 py-1 text-xs font-medium text-white shadow">
+            <ZoomIn className="h-3.5 w-3.5" /> Inspect Full Size
+          </span>
+        </div>
+      </button>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <Button variant="outline" size="sm" asChild className="h-8 text-xs">
+          <a href={blobUrl} download={`${refCode}-payment.jpg`}>
+            <Download className="mr-1.5 h-3.5 w-3.5" />
+            Download proof
+          </a>
+        </Button>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => setOpenModal(true)}
+          className="h-8 text-xs text-muted-foreground hover:text-foreground"
+        >
+          <ZoomIn className="mr-1.5 h-3.5 w-3.5" />
+          Full-size inspection
+        </Button>
+      </div>
+
+      <Dialog open={openModal} onOpenChange={setOpenModal}>
+        <DialogContent className="flex max-h-[92vh] max-w-4xl flex-col p-6">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between text-base font-bold">
+              <span>UPI Payment Screenshot — {teamName}</span>
+              <span className="font-mono text-xs font-normal text-muted-foreground">Ref: {refCode}</span>
+            </DialogTitle>
+          </DialogHeader>
+          <div className="flex flex-1 items-center justify-center overflow-auto rounded border border-border bg-muted/20 p-2">
+            <img
+              src={blobUrl}
+              alt={`UPI Payment Screenshot for ${teamName}`}
+              className="max-h-[72vh] w-auto rounded object-contain shadow-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-2 pt-2">
+            <Button variant="outline" size="sm" asChild className="h-8 text-xs">
+              <a href={blobUrl} download={`${refCode}-payment.jpg`}>
+                <Download className="mr-1.5 h-3.5 w-3.5" />
+                Download original
+              </a>
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
