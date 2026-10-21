@@ -400,28 +400,34 @@ async function syncToAppwrite(prev: DB, next: DB): Promise<void> {
   // 4. Sync Registrations
   for (const reg of next.registrations) {
     const old = prev.registrations.find((r) => r.id === reg.id);
-    let fileId = reg.paymentScreenshot || "";
-
-    if (reg.paymentScreenshot && reg.paymentScreenshot.startsWith("data:")) {
-      try {
-        fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, reg.paymentScreenshot, "proof");
-      } catch (e) {
-        console.warn("[Store] Payment screenshot upload failed:", e);
-      }
-    }
-
-    const payload = {
-      ref: reg.ref,
-      eventSlug: reg.eventSlug,
-      values: JSON.stringify(reg.values || {}),
-      color: reg.color || null,
-      paymentScreenshot: fileId || "pending",
-      emailSent: reg.emailSent || false,
-      confirmed: reg.confirmed || false,
-      confirmedAt: reg.confirmedAt || null,
-    };
 
     if (!old) {
+      let fileId = reg.paymentScreenshot || "";
+
+      if (reg.paymentScreenshot && reg.paymentScreenshot.startsWith("data:")) {
+        try {
+          fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, reg.paymentScreenshot, "proof");
+        } catch (e) {
+          console.warn("[Store] Payment screenshot upload failed:", e);
+        }
+      } else if (reg.paymentScreenshot && reg.paymentScreenshot.includes("/files/")) {
+        const match = reg.paymentScreenshot.match(/\/files\/([^\/\?]+)/);
+        if (match?.[1]) {
+          fileId = match[1];
+        }
+      }
+
+      const payload = {
+        ref: reg.ref,
+        eventSlug: reg.eventSlug,
+        values: JSON.stringify(reg.values || {}),
+        color: reg.color || null,
+        paymentScreenshot: fileId || "pending",
+        emailSent: reg.emailSent || false,
+        confirmed: reg.confirmed || false,
+        confirmedAt: reg.confirmedAt || null,
+      };
+
       try {
         await databases.createDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
       } catch (err: any) {
@@ -431,8 +437,51 @@ async function syncToAppwrite(prev: DB, next: DB): Promise<void> {
           throw err;
         }
       }
-    } else if (JSON.stringify(old) !== JSON.stringify(reg)) {
-      await databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, payload);
+    } else {
+      // Targeted diff update: only send fields that actually changed
+      const diff: Record<string, any> = {};
+
+      if (old.emailSent !== reg.emailSent) {
+        diff.emailSent = reg.emailSent ?? false;
+      }
+      if (old.confirmed !== reg.confirmed) {
+        diff.confirmed = reg.confirmed ?? false;
+      }
+      if (old.confirmedAt !== reg.confirmedAt) {
+        diff.confirmedAt = reg.confirmedAt || null;
+      }
+      if (old.color !== reg.color) {
+        diff.color = reg.color || null;
+      }
+      if (JSON.stringify(old.values) !== JSON.stringify(reg.values)) {
+        diff.values = JSON.stringify(reg.values || {});
+      }
+      if (old.eventSlug !== reg.eventSlug) {
+        diff.eventSlug = reg.eventSlug;
+      }
+      if (old.ref !== reg.ref) {
+        diff.ref = reg.ref;
+      }
+      if (old.paymentScreenshot !== reg.paymentScreenshot) {
+        let fileId = reg.paymentScreenshot || "";
+        if (reg.paymentScreenshot && reg.paymentScreenshot.startsWith("data:")) {
+          try {
+            fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, reg.paymentScreenshot, "proof");
+          } catch (e) {
+            console.warn("[Store] Payment screenshot upload failed:", e);
+          }
+        } else if (reg.paymentScreenshot && reg.paymentScreenshot.includes("/files/")) {
+          const match = reg.paymentScreenshot.match(/\/files\/([^\/\?]+)/);
+          if (match?.[1]) {
+            fileId = match[1];
+          }
+        }
+        diff.paymentScreenshot = fileId || "pending";
+      }
+
+      if (Object.keys(diff).length > 0) {
+        await databases.updateDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id, diff);
+      }
     }
   }
 
@@ -537,6 +586,11 @@ export async function addRegistration(
       fileId = await uploadBase64Image(BUCKETS.PAYMENT_PROOFS, paymentScreenshot, "proof");
     } catch (e) {
       console.warn("[Store] Payment screenshot upload failed:", e);
+    }
+  } else if (paymentScreenshot && paymentScreenshot.includes("/files/")) {
+    const match = paymentScreenshot.match(/\/files\/([^\/\?]+)/);
+    if (match?.[1]) {
+      fileId = match[1];
     }
   }
 

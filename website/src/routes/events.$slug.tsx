@@ -16,7 +16,6 @@ import {
 } from "@/data/events";
 import { addRegistration, fileToImage, update, useDB, useLiveEvents } from "@/lib/store";
 import { Button } from "@/components/ui/button";
-import { sendRegistrationEmail } from "@/lib/email.functions";
 
 export const Route = createFileRoute("/events/$slug")({
   head: ({ params }) => {
@@ -183,30 +182,6 @@ function EventPage() {
     toast.success("Registration submitted", {
       description: `Reference ${id} — payment pending verification.`,
     });
-    const email = String(values["email"] ?? "");
-    if (email && confirmationMessageEnabled(form)) {
-      try {
-        const r = await sendRegistrationEmail({
-          data: {
-            to: email,
-            toName: vars.captain,
-            subject: fillMessage(form.message.subject, vars),
-            text: fillMessage(form.message.body, vars),
-          },
-        });
-        if (r.sent) {
-          update((d) => ({
-            ...d,
-            registrations: d.registrations.map((x) =>
-              x.eventSlug === event.slug && x.ref === id ? { ...x, emailSent: true } : x,
-            ),
-          }));
-          toast.success("Confirmation sent to your email");
-        }
-      } catch {
-        /* email is best-effort */
-      }
-    }
     setBusy(false);
   }
 

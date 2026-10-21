@@ -135,6 +135,107 @@ describe("registration options", () => {
     expect(canConfirmRegistration(form, registration)).toBe(false);
     expect(canConfirmRegistration(form, { ...registration, emailSent: true })).toBe(true);
   });
+
+  it("ensures confirmation-email-triggered update never includes paymentScreenshot in update payload", async () => {
+    const createDocSpy = vi.spyOn(databases, "createDocument").mockResolvedValue({} as any);
+    const updateDocSpy = vi.spyOn(databases, "updateDocument").mockResolvedValue({} as any);
+    const deleteDocSpy = vi.spyOn(databases, "deleteDocument").mockResolvedValue({} as any);
+
+    const initialReg: Registration = {
+      id: "reg-email-diff-test",
+      ref: "CFC-EMDIFF",
+      eventSlug: "payment-test",
+      values: { team: "Diff Warriors" },
+      paymentScreenshot: "https://sgp.cloud.appwrite.io/v1/storage/buckets/payment_proofs/files/6ad892bb0036ba8ae66d/view?project=6ad70b6a00259c48c1b5&impersonateuserid=",
+      emailSent: false,
+      confirmed: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    await act(async () => {
+      await update((db) => ({
+        ...db,
+        registrations: [initialReg],
+      }));
+    });
+
+    updateDocSpy.mockClear();
+
+    // Admin sends confirmation email -> updates emailSent: true
+    await act(async () => {
+      await update((d) => ({
+        ...d,
+        registrations: d.registrations.map((x) =>
+          x.id === initialReg.id ? { ...x, emailSent: true } : x,
+        ),
+      }));
+    });
+
+    expect(updateDocSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      COLLECTIONS.REGISTRATIONS,
+      initialReg.id,
+      expect.objectContaining({ emailSent: true })
+    );
+
+    const callArgs = updateDocSpy.mock.calls.find((call) => call[2] === initialReg.id);
+    expect(callArgs).toBeDefined();
+    const payload = callArgs![3] as Record<string, any>;
+    // Targeted write must NEVER include paymentScreenshot when sending email
+    expect(payload).not.toHaveProperty("paymentScreenshot");
+    expect(payload).toEqual({ emailSent: true });
+
+    createDocSpy.mockRestore();
+    updateDocSpy.mockRestore();
+    deleteDocSpy.mockRestore();
+  });
+
+  it("ensures confirmation update never includes paymentScreenshot in update payload", async () => {
+    const createDocSpy = vi.spyOn(databases, "createDocument").mockResolvedValue({} as any);
+    const updateDocSpy = vi.spyOn(databases, "updateDocument").mockResolvedValue({} as any);
+    const deleteDocSpy = vi.spyOn(databases, "deleteDocument").mockResolvedValue({} as any);
+
+    const initialReg: Registration = {
+      id: "reg-confirm-diff-test",
+      ref: "CFC-CONFDIFF",
+      eventSlug: "payment-test",
+      values: { team: "Confirm Warriors" },
+      paymentScreenshot: "https://sgp.cloud.appwrite.io/v1/storage/buckets/payment_proofs/files/6ad892bb0036ba8ae66d/view?project=6ad70b6a00259c48c1b5&impersonateuserid=",
+      emailSent: true,
+      confirmed: false,
+      createdAt: new Date().toISOString(),
+    };
+
+    await act(async () => {
+      await update((db) => ({
+        ...db,
+        registrations: [initialReg],
+      }));
+    });
+
+    updateDocSpy.mockClear();
+
+    const confirmedAt = new Date().toISOString();
+    // Admin confirms registration
+    await act(async () => {
+      await update((d) => ({
+        ...d,
+        registrations: d.registrations.map((x) =>
+          x.id === initialReg.id ? { ...x, confirmed: true, confirmedAt } : x,
+        ),
+      }));
+    });
+
+    const callArgs = updateDocSpy.mock.calls.find((call) => call[2] === initialReg.id);
+    expect(callArgs).toBeDefined();
+    const payload = callArgs![3] as Record<string, any>;
+    expect(payload).not.toHaveProperty("paymentScreenshot");
+    expect(payload).toEqual({ confirmed: true, confirmedAt });
+
+    createDocSpy.mockRestore();
+    updateDocSpy.mockRestore();
+    deleteDocSpy.mockRestore();
+  });
 });
 
 describe("event deletion persistence (Bug 1 regression check)", () => {

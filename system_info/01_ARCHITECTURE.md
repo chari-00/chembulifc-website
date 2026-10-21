@@ -116,4 +116,4 @@ The platform enforces two distinct, decoupled audit streams:
 - `src/assets/hero-pitch.jpg`: Floodlit pitch hero banner.
 - `src/assets/event-1.jpg`, `event-2.jpg`: Tournament promotional posters.
 - `src/assets/gallery-1.jpg`, `gallery-2.jpg`, `gallery-3.jpg`: Match action photos with predefined aspect ratios.
-- Base64 User Uploads: Payment screenshots uploaded during team registration are compressed, verified, and stored as Base64 Data URLs (`data:image/(png|jpeg|webp);base64,...`).
+- Storage Bucket Proofs: Payment screenshots uploaded during team registration are validated on the client as Base64 image data URLs, compressed, uploaded to the `payment_proofs` Appwrite Storage bucket, and persisted in the `registrations` database collection as an Appwrite Storage File ID (`paymentScreenshot: String (File ID), 128 chars max`).

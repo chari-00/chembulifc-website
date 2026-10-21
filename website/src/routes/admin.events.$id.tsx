@@ -11,7 +11,6 @@ import {
   statusLabel,
   uid,
   validVenueMap,
-  validPaymentScreenshot,
   confirmationMessageEnabled,
   canConfirmRegistration,
   type ClubEvent,
@@ -111,6 +110,8 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
     setForm({ fields: ev.form.fields.map((f, j) => (j === i ? { ...f, ...p } : f)) });
 
   const [refHistory, setRefHistory] = useState<ReferenceHistoryEntry[]>([]);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isNew && initial.slug) {
@@ -828,8 +829,8 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                   <div className="sm:col-span-2">
                     <dt className="text-xs uppercase tracking-widest text-muted-foreground">UPI Payment Screenshot</dt>
                     <dd className="mt-2">
-                      {validPaymentScreenshot(r.paymentScreenshot) ? (
-                        <a href={r.paymentScreenshot} download={`${r.ref}-payment.jpg`} className="block w-fit" title="Download payment screenshot">
+                      {r.paymentScreenshot && r.paymentScreenshot !== "pending" ? (
+                        <a href={r.paymentScreenshot} target="_blank" rel="noopener noreferrer" download={`${r.ref}-payment.jpg`} className="block w-fit" title="Download payment screenshot">
                           <img src={r.paymentScreenshot} alt={`UPI Payment Screenshot for ${String(r.values["team"] ?? "team")}`} className="max-h-96 max-w-full border border-border object-contain" />
                         </a>
                       ) : <span className="text-muted-foreground">Not provided</span>}
@@ -877,7 +878,9 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                   <div className="flex flex-wrap gap-2 sm:col-span-2">
                     {confirmationMessageEnabled(ev.form) && <Button
                       variant="outline"
+                      disabled={sendingEmailId === r.id}
                       onClick={async () => {
+                        if (sendingEmailId === r.id) return;
                         if (!confirmationMessageEnabled(ev.form)) return;
                         const to = String(r.values["email"] ?? "");
                         if (!to) { toast.error("This team has no email address"); return; }
@@ -891,6 +894,7 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                           color: r.color ?? "",
                           fee: `₹${ev.fee.toLocaleString("en-IN")}`,
                         };
+                        setSendingEmailId(r.id);
                         try {
                           const res = await sendRegistrationEmail({
                             data: {
@@ -917,19 +921,23 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                           toast.success(`Email sent to ${to}`);
                         } catch (e) {
                           toast.error((e as Error).message);
+                        } finally {
+                          setSendingEmailId(null);
                         }
                       }}
                       className={btn}
                     >
-                      <Mail className="h-4 w-4" /> {r.emailSent ? "Resend email" : "Send email"}
+                      <Mail className={`h-4 w-4 ${sendingEmailId === r.id ? "animate-pulse" : ""}`} />{" "}
+                      {sendingEmailId === r.id ? "Sending..." : r.emailSent ? "Resend email" : "Send email"}
                     </Button>}
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
                         variant="outline"
-                        disabled={!canConfirmRegistration(ev.form, r)}
+                        disabled={!canConfirmRegistration(ev.form, r) || confirmingId === r.id}
                         title={confirmationMessageEnabled(ev.form) && !r.emailSent ? "Send confirmation email first" : undefined}
                         onClick={async () => {
-                          if (!canConfirmRegistration(ev.form, r)) return;
+                          if (!canConfirmRegistration(ev.form, r) || confirmingId === r.id) return;
+                          setConfirmingId(r.id);
                           try {
                             await update((d) => ({
                               ...d,
@@ -949,12 +957,14 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                             toast.success("Registration confirmed");
                           } catch (e) {
                             toast.error((e as Error).message);
+                          } finally {
+                            setConfirmingId(null);
                           }
                         }}
                         className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
                       >
                         <CheckCircle2 className="h-4 w-4" />
-                        {r.confirmed ? "Registration confirmed" : "Confirm registration"}
+                        {confirmingId === r.id ? "Confirming..." : r.confirmed ? "Registration confirmed" : "Confirm registration"}
                       </Button>
                       {!r.confirmed && confirmationMessageEnabled(ev.form) && !r.emailSent && (
                         <span className="text-xs text-muted-foreground italic">

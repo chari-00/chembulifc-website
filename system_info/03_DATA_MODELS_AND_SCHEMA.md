@@ -96,7 +96,7 @@ export interface Registration {
   values: Record<string, string | string[]>; // Submitted dynamic form values
   color?: string;                   // Selected jersey color name
   createdAt: string;                // ISO-8601 creation timestamp
-  paymentScreenshot?: string;       // Verified Base64 UPI payment screenshot
+  paymentScreenshot?: string;       // Appwrite Storage File ID (in database) / resolved view URL (in memory)
   emailSent?: boolean;              // Whether confirmation email has been dispatched
   confirmed?: boolean;              // Admin verified / confirmed flag
   confirmedAt?: string;             // ISO-8601 confirmation timestamp
@@ -225,14 +225,15 @@ export function registrationReferenceWithFallback(
 - Tested against existing tournament references and verified against the global `reference_history` collection.
 - Unit tests (`src/test/events-rules.test.tsx`) guarantee collision avoidance even under identical millisecond timestamps.
 
-### Rule 3: UPI Payment Screenshot Validation
-Uploaded payment evidence must be validated before storage:
+### Rule 3: UPI Payment Screenshot Form Input Validation
+Uploaded payment evidence is validated on the client as a valid Base64 image data URL before being uploaded to Appwrite Storage bucket `payment_proofs`:
 ```typescript
 export function validPaymentScreenshot(value: string | undefined): value is string {
   return !!value && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+={0,2}$/.test(value);
 }
 ```
-- Only valid Base64 data URLs for JPEG, PNG, or WebP images are accepted.
+- Only valid Base64 data URLs for JPEG, PNG, or WebP images are accepted as form input.
+- Once uploaded to Appwrite Storage, only the short file ID (e.g. 20 chars) is saved in the Appwrite database document's `paymentScreenshot` field.
 
 ### Rule 4: Team Color Palette Allocation
 Jersey colors are picked from a curated list of high-contrast basic athletic colors (`BASIC_COLORS`).
