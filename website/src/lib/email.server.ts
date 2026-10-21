@@ -14,21 +14,25 @@ export function getSignatureImagePath(): string {
   if (typeof import.meta.url === "string" && import.meta.url.startsWith("file:")) {
     try {
       candidatePaths.push(fileURLToPath(new URL("../assets/signature-message.png", import.meta.url)));
+      candidatePaths.push(fileURLToPath(new URL("../../public/signature-message.png", import.meta.url)));
+      candidatePaths.push(fileURLToPath(new URL("../../../public/signature-message.png", import.meta.url)));
     } catch {}
   }
 
   candidatePaths.push(
+    path.resolve(process.cwd(), "public/signature-message.png"),
+    path.resolve(process.cwd(), ".output/public/signature-message.png"),
     path.resolve(process.cwd(), "src/assets/signature-message.png"),
+    path.resolve(process.cwd(), "website/public/signature-message.png"),
     path.resolve(process.cwd(), "website/src/assets/signature-message.png"),
     path.resolve(process.cwd(), "../logo/signature-message.png"),
-    "C:\\Users\\hailq\\Music\\Chembuli\\logo\\signature-message.png",
-    "C:\\Users\\hailq\\Music\\Chembuli\\website\\src\\assets\\signature-message.png",
+    path.resolve(process.cwd(), "logo/signature-message.png"),
   );
 
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) return p;
   }
-  return "C:\\Users\\hailq\\Music\\Chembuli\\logo\\signature-message.png";
+  return "";
 }
 
 export function buildRegistrationEmailHtml(text: string): string {
@@ -71,11 +75,40 @@ Instagram: @chembuli.fc
 Contact: +91 72002 39411, +91 86104 74554`;
 }
 
-export function buildRegistrationEmailAttachments(): Array<{ filename: string; path: string; cid: string }> {
+export function buildRegistrationEmailAttachments(): Array<{
+  filename: string;
+  path: string;
+  content?: Buffer;
+  cid: string;
+}> {
+  const imgPath = getSignatureImagePath();
+  if (imgPath && fs.existsSync(imgPath)) {
+    try {
+      const content = fs.readFileSync(imgPath);
+      return [
+        {
+          filename: "signature-message.png",
+          path: imgPath,
+          content,
+          cid: "chembuli-logo",
+        },
+      ];
+    } catch {
+      return [
+        {
+          filename: "signature-message.png",
+          path: imgPath,
+          cid: "chembuli-logo",
+        },
+      ];
+    }
+  }
+
+  // Deployed fallback for serverless / containerized runtimes where local asset files are absent
   return [
     {
       filename: "signature-message.png",
-      path: getSignatureImagePath(),
+      path: "https://chembuli-fc.appwrite.network/signature-message.png",
       cid: "chembuli-logo",
     },
   ];

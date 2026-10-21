@@ -636,6 +636,12 @@ const FlexCarousel = ({
       };
       image.onerror = () => {
         if (!alive) return;
+        if (!image.dataset.retried) {
+          image.dataset.retried = 'true';
+          const sep = item.src.includes('?') ? '&' : '?';
+          image.src = `${item.src}${sep}_cb=${Date.now()}`;
+          return;
+        }
         slot.failed = true;
         dirty = true;
         start();

@@ -18,7 +18,7 @@ import {
   type FieldType,
   type FormField,
 } from "@/data/events";
-import { fileToImage, update, useDB, logAdminAction, fetchReferenceHistory, type ReferenceHistoryEntry } from "@/lib/store";
+import { fileToImage, update, useDB, logAdminAction, fetchReferenceHistory, deleteRegistration, type ReferenceHistoryEntry } from "@/lib/store";
 import { sendRegistrationEmail } from "@/lib/email.functions";
 import { exportRegistrationsToCsv } from "@/lib/csv-export";
 import { pageHead } from "@/lib/page-head";
@@ -923,48 +923,52 @@ function Editor({ initial, isNew }: { initial: ClubEvent; isNew: boolean }) {
                     >
                       <Mail className="h-4 w-4" /> {r.emailSent ? "Resend email" : "Send email"}
                     </Button>}
-                    <Button
-                      variant="outline"
-                      disabled={!canConfirmRegistration(ev.form, r)}
-                      title={confirmationMessageEnabled(ev.form) && !r.emailSent ? "Send the email first" : undefined}
-                      onClick={async () => {
-                        if (!canConfirmRegistration(ev.form, r)) return;
-                        try {
-                          await update((d) => ({
-                            ...d,
-                            registrations: d.registrations.map((x) =>
-                              x.id === r.id
-                                ? { ...x, confirmed: true, confirmedAt: new Date().toISOString() }
-                                : x,
-                            ),
-                          }));
-                          logAdminAction(
-                            "registration.confirm",
-                            "registration",
-                            r.id,
-                            `Confirmed registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
-                            { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
-                          ).catch(() => {});
-                          toast.success("Registration confirmed");
-                        } catch (e) {
-                          toast.error((e as Error).message);
-                        }
-                      }}
-                      className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
-                    >
-                      <CheckCircle2 className="h-4 w-4" />
-                      {r.confirmed ? "Registration confirmed" : "Confirm registration"}
-                    </Button>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="outline"
+                        disabled={!canConfirmRegistration(ev.form, r)}
+                        title={confirmationMessageEnabled(ev.form) && !r.emailSent ? "Send confirmation email first" : undefined}
+                        onClick={async () => {
+                          if (!canConfirmRegistration(ev.form, r)) return;
+                          try {
+                            await update((d) => ({
+                              ...d,
+                              registrations: d.registrations.map((x) =>
+                                x.id === r.id
+                                  ? { ...x, confirmed: true, confirmedAt: new Date().toISOString() }
+                                  : x,
+                              ),
+                            }));
+                            logAdminAction(
+                              "registration.confirm",
+                              "registration",
+                              r.id,
+                              `Confirmed registration for team "${r.values["team"] ?? "Unnamed"}" (${r.ref})`,
+                              { ref: r.ref, team: r.values["team"], eventSlug: ev.slug }
+                            ).catch(() => {});
+                            toast.success("Registration confirmed");
+                          } catch (e) {
+                            toast.error((e as Error).message);
+                          }
+                        }}
+                        className={`${btn} disabled:cursor-not-allowed disabled:opacity-40`}
+                      >
+                        <CheckCircle2 className="h-4 w-4" />
+                        {r.confirmed ? "Registration confirmed" : "Confirm registration"}
+                      </Button>
+                      {!r.confirmed && confirmationMessageEnabled(ev.form) && !r.emailSent && (
+                        <span className="text-xs text-muted-foreground italic">
+                          (Send confirmation email first)
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="sm:col-span-2">
                     <button
                       onClick={async () => {
                         if (!confirm("Delete this registration? Its spot and color become free.")) return;
                         try {
-                          await update((d) => ({
-                            ...d,
-                            registrations: d.registrations.filter((x) => x.id !== r.id),
-                          }));
+                          await deleteRegistration(r.id);
                           logAdminAction(
                             "registration.delete",
                             "registration",

@@ -30,7 +30,9 @@ Every email dispatched by `sendRegistrationEmailHandler` includes:
   - Preserves full textual message.
   - Standardized sign-off with `TEAM CHEMBULI FC`, official email (`chembuli.fc@gmail.com`), Instagram handle (`@chembuli.fc`), and club phone lines.
 - **Inline Attachments** (`buildRegistrationEmailAttachments`):
-  - Bundles `signature-message.png` (`website/src/assets/signature-message.png` / fallback `logo/signature-message.png`) under `cid:chembuli-logo`.
+  - Cross-platform runtime path resolution: dynamically resolves `signature-message.png` relative to `process.cwd()` across candidate bundled locations (`public/signature-message.png`, `.output/public/signature-message.png`, `src/assets/signature-message.png`).
+  - Reads image content into an in-memory `Buffer` and attaches it with Content-ID `cid:chembuli-logo`.
+  - Zero hardcoded OS-specific paths (`C:\Users\...` eliminated entirely). If filesystem assets are unavailable in a serverless container, gracefully falls back to the hosted URL `https://chembuli-fc.appwrite.network/signature-message.png`.
 
 #### Required Environment Variables
 | Variable | Description |

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { blankEvent, eventStatus, generateColors, nextEvent, registrationReference, registrationReferenceWithFallback, validVenueMap, confirmationMessageEnabled, canConfirmRegistration, validPaymentScreenshot, type Registration } from "@/data/events";
-import { addRegistration, refreshFromAppwrite, update, useDB } from "@/lib/store";
+import { addRegistration, refreshFromAppwrite, update, useDB, deleteRegistration } from "@/lib/store";
 import { databases, storage, COLLECTIONS, BUCKETS } from "@/lib/appwrite";
 import { renderHook, act } from "@testing-library/react";
 
@@ -404,6 +404,95 @@ describe("cross-session cloud persistence regression checks (Symptoms A, C, E)",
 
     createDocSpy.mockRestore();
     updateDocSpy.mockRestore();
+  });
+
+  it("deleting a registration calls deleteDocument and immediately releases its taken jersey color back to available pool", async () => {
+    const createDocSpy = vi.spyOn(databases, "createDocument").mockResolvedValue({} as any);
+    const updateDocSpy = vi.spyOn(databases, "updateDocument").mockResolvedValue({} as any);
+    const deleteDocSpy = vi.spyOn(databases, "deleteDocument").mockResolvedValue({} as any);
+
+    // Initial database with an event and a registration that selected "Red"
+    const event = {
+      ...blankEvent(),
+      slug: "color-release-cup",
+      name: "Color Release Cup",
+      capacity: 8,
+      form: {
+        ...blankEvent().form,
+        colorPicker: true,
+      },
+    };
+
+    const reg1: Registration = {
+      id: "reg-red-1",
+      ref: "CFC-RED1",
+      eventSlug: "color-release-cup",
+      values: { team: "Crimson Warriors" },
+      color: "Red",
+      createdAt: new Date().toISOString(),
+    };
+
+    const reg2: Registration = {
+      id: "reg-blue-2",
+      ref: "CFC-BLU2",
+      eventSlug: "color-release-cup",
+      values: { team: "Blue Sharks" },
+      color: "Blue",
+      createdAt: new Date().toISOString(),
+    };
+
+    await act(async () => {
+      await update((db) => ({
+        ...db,
+        events: [event],
+        registrations: [reg1, reg2],
+      }));
+    });
+
+    // 1. Verify before delete: both Red and Blue are taken
+    const { result, unmount } = renderHook(() => useDB());
+    const takenBefore = new Set(
+      result.current.registrations
+        .filter((r) => r.eventSlug === event.slug && r.color)
+        .map((r) => r.color)
+    );
+    const colors = generateColors(event.capacity);
+    const freeColorsBefore = colors.filter((c) => !takenBefore.has(c.name));
+
+    expect(takenBefore.has("Red")).toBe(true);
+    expect(takenBefore.has("Blue")).toBe(true);
+    expect(freeColorsBefore.map((c) => c.name)).not.toContain("Red");
+    expect(freeColorsBefore.map((c) => c.name)).not.toContain("Blue");
+
+    // 2. Admin deletes reg1 (Red)
+    await act(async () => {
+      await deleteRegistration("reg-red-1");
+    });
+
+    // 3. Verify deleteDocument was genuinely called against Appwrite
+    expect(deleteDocSpy).toHaveBeenCalledWith(
+      expect.any(String),
+      COLLECTIONS.REGISTRATIONS,
+      "reg-red-1"
+    );
+
+    // 4. Verify reactive store recomputed: Red is no longer taken, but Blue remains taken
+    const takenAfter = new Set(
+      result.current.registrations
+        .filter((r) => r.eventSlug === event.slug && r.color)
+        .map((r) => r.color)
+    );
+    const freeColorsAfter = colors.filter((c) => !takenAfter.has(c.name));
+
+    expect(takenAfter.has("Red")).toBe(false);
+    expect(takenAfter.has("Blue")).toBe(true);
+    expect(freeColorsAfter.map((c) => c.name)).toContain("Red");
+    expect(freeColorsAfter.map((c) => c.name)).not.toContain("Blue");
+
+    unmount();
+    createDocSpy.mockRestore();
+    updateDocSpy.mockRestore();
+    deleteDocSpy.mockRestore();
   });
 });
 

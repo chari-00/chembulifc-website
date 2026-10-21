@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import fs from "node:fs";
+import path from "node:path";
 import {
   validateEmailInput,
   sendRegistrationEmailHandler,
@@ -110,4 +111,31 @@ describe("sendRegistrationEmail (Gmail SMTP Transport & Rich HTML)", () => {
       }),
     ).toThrow("Invalid email");
   });
+
+  it("never contains Windows-specific absolute paths in email.server.ts source code", () => {
+    const serverFileContent = fs.readFileSync(
+      path.resolve(process.cwd(), "src/lib/email.server.ts"),
+      "utf-8"
+    );
+    expect(serverFileContent).not.toContain("C:\\Users");
+    expect(serverFileContent).not.toContain("C:/Users");
+    expect(serverFileContent).not.toContain("hailq");
+  });
+
+  it("handles Linux-like environment fallback gracefully when local files are absent", () => {
+    const originalExistsSync = fs.existsSync;
+    try {
+      // Simulate environment where local filesystem has no asset files
+      (fs as any).existsSync = () => false;
+      const attachments = buildRegistrationEmailAttachments();
+      expect(attachments).toHaveLength(1);
+      expect(attachments[0]?.filename).toBe("signature-message.png");
+      expect(attachments[0]?.cid).toBe("chembuli-logo");
+      expect(attachments[0]?.path).toBe("https://chembuli-fc.appwrite.network/signature-message.png");
+      expect(attachments[0]?.path).not.toContain("C:\\Users\\hailq");
+    } finally {
+      (fs as any).existsSync = originalExistsSync;
+    }
+  });
 });
+

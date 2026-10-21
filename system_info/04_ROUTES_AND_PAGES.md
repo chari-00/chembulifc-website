@@ -83,7 +83,12 @@
 - **Registrations & Approvals Tab**:
   - View all registered teams with timestamp and unique `CFC-XXXXXX` reference.
   - Inspect uploaded UPI payment screenshots in a full-size modal.
-  - Approve / Confirm registration with one click.
+  - **Email-Gated Confirmation**: The "Confirm registration" button is strictly gated and disabled until the team's confirmation email has been dispatched (`r.emailSent === true` or confirmation messaging is toggled off). Shows an inline helper label `(Send confirmation email first)` and tooltip when disabled.
+  - **Strict Confirmation Scope**: Clicking "Confirm registration" strictly performs only:
+    - Sets `confirmed: true` and `confirmedAt: <ISO timestamp>` on the registration document.
+    - Records exactly one audit event `logAdminAction("registration.confirm", ...)` to `admin_history`.
+    - Has zero redundant side effects (no duplicate email sending or unrelated mutations).
+  - **Registration Deletion & Instant Color Release**: Deleting a registration invokes `deleteRegistration(id)`, calling `deleteRegistrationFn` to delete the document in Appwrite via the server API key (bypassing client-side document security restrictions on guest registrations) and re-evaluating color availability live so the deleted team's jersey color is immediately freed back to the tournament's available pool.
   - Trigger personalized confirmation emails to team captains via Gmail SMTP (`sendRegistrationEmail`).
   - **Export to CSV**: One-click spreadsheet export (`exportRegistrationsToCsv`) downloading `{slug}-registrations-{yyyy-mm-dd}.csv` with dynamic form field headers, multi-select joining, RFC 4180 cell escaping, UTF-8 BOM support, and disabled state for empty tournaments.
   - **Reference Creation Audit Trail**: Embedded per-tournament audit log section querying `reference_history` to display verified registration timestamps, assigned references, registration IDs, and client IP hints.

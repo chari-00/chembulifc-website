@@ -21,6 +21,7 @@ import {
   COLLECTIONS,
   BUCKETS,
 } from "@/lib/appwrite";
+import { listRegistrationsFn, deleteRegistrationFn } from "@/lib/registrations.functions";
 
 export type { Photo };
 
@@ -145,8 +146,15 @@ export async function refreshFromAppwrite(): Promise<DB> {
       databases.listDocuments(DATABASE_ID, COLLECTIONS.EVENTS, [Query.limit(100)]),
       databases.listDocuments(DATABASE_ID, COLLECTIONS.GALLERY, [Query.orderDesc("$createdAt"), Query.limit(100)]),
       databases.listDocuments(DATABASE_ID, COLLECTIONS.POSTS, [Query.limit(100)]),
-      // Defensively catch 401 on registrations so unauthenticated public visitors never fail store hydration
-      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]).catch(() => ({ documents: [] })),
+      // Defensively catch 401 on registrations and fall back to server function
+      databases.listDocuments(DATABASE_ID, COLLECTIONS.REGISTRATIONS, [Query.limit(500)]).catch(async () => {
+        try {
+          const srv = await listRegistrationsFn();
+          return srv && (srv as any).documents ? srv : { documents: [] };
+        } catch {
+          return { documents: [] };
+        }
+      }),
     ]);
 
     const events: ClubEvent[] = eventsRes.documents.map((doc: any) => ({
@@ -430,7 +438,13 @@ async function syncToAppwrite(prev: DB, next: DB): Promise<void> {
 
   for (const reg of prev.registrations) {
     if (!next.registrations.some((r) => r.id === reg.id)) {
-      await databases.deleteDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id);
+      try {
+        await databases.deleteDocument(DATABASE_ID, COLLECTIONS.REGISTRATIONS, reg.id);
+      } catch (err: any) {
+        // Appwrite document security blocks client SDK delete of guest-created registrations.
+        // Fall back to server function with backend API key.
+        await deleteRegistrationFn({ data: { registrationId: reg.id } });
+      }
     }
   }
 }
@@ -568,6 +582,14 @@ export async function addRegistration(
   });
 
   return saved;
+}
+
+/** Deletes a registration document from Appwrite and updates local reactive store. */
+export async function deleteRegistration(id: string): Promise<DB> {
+  return update((d) => ({
+    ...d,
+    registrations: d.registrations.filter((x) => x.id !== id),
+  }));
 }
 
 /** Logs an administrative action to the admin_history collection. */

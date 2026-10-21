@@ -41,7 +41,7 @@ function PhotoItem({
 
   return (
     <div className="border border-border bg-card">
-      <img src={photo.src} alt={photo.title} className="aspect-square w-full object-cover" />
+      <img src={photo.src} crossOrigin="anonymous" alt={photo.title} className="aspect-square w-full object-cover" />
       <div className="space-y-2 p-3">
         <input
           value={title}

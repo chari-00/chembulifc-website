@@ -1017,6 +1017,7 @@ const Masonry = ({
               <img
                 className={IMAGE}
                 src={item.img}
+                crossOrigin="anonymous"
                 alt={item.alt ?? item.title ?? ''}
                 draggable={false}
                 decoding="async"
@@ -1085,7 +1086,7 @@ const Masonry = ({
           aria-hidden="true"
         >
           <div className={MEDIA}>
-            <img className={IMAGE} src={ghost.item.img} alt="" data-loaded="" draggable={false} />
+            <img className={IMAGE} src={ghost.item.img} crossOrigin="anonymous" alt="" data-loaded="" draggable={false} />
           </div>
         </div>
       ))}
@@ -1104,6 +1105,7 @@ const Masonry = ({
               className={BOX_IMAGE}
               data-box-image=""
               src={openItem.img}
+              crossOrigin="anonymous"
               alt={openItem.alt ?? openItem.title ?? ''}
               draggable={false}
               style={{ width: box.width, height: box.height, left: box.left, top: box.top, borderRadius: 6 }}
